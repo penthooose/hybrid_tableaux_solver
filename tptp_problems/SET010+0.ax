@@ -1,0 +1,198 @@
+%------------------------------------------------------------------------------
+% File     : SET010+0 : TPTP v9.2.1. Released v9.1.0.
+% Domain   : Set Theory
+% Axioms   : Hereditary finite sets
+% Version  : [Bro24] axioms.
+% English  :
+
+% Refs     : [Bro24a] Brown (2024), Email to G. Sutcliffe
+%          : [Bro24] Brown (2024), Simple Difficult Problems for Automated
+% Source   : [Bro24a]
+% Names    : hf.ax [Bro24a]
+
+% Status   : Satisfiable
+% Syntax   : Number of formulae    :   25 (   3 unt;   0 def)
+%            Number of atoms       :   81 (   4 equ)
+%            Maximal formula atoms :    4 (   3 avg)
+%            Number of connectives :   74 (  18   ~;   1   |;  31   &)
+%                                         (  21 <=>;   3  =>;   0  <=;   0 <~>)
+%            Maximal formula depth :    7 (   6 avg)
+%            Maximal term depth    :    3 (   1 avg)
+%            Number of predicates  :   19 (  18 usr;   0 prp; 1-2 aty)
+%            Number of functors    :    7 (   7 usr;   1 con; 0-2 aty)
+%            Number of variables   :   52 (  36   !;  16   ?)
+% SPC      : FOF_SAT_RFO_SEQ
+
+% Comments :
+%------------------------------------------------------------------------------
+fof(subq_def,axiom,
+    ! [X,Y] :
+      ( subq(X,Y)
+    <=> ! [Z] :
+          ( mem(Z,X)
+         => mem(Z,Y) ) ) ).
+
+fof(setext,axiom,
+    ! [X,Y] :
+      ( subq(X,Y)
+     => ( subq(Y,X)
+       => X = Y ) ) ).
+
+fof(disj_def,axiom,
+    ! [X,Y] :
+      ( disj(X,Y)
+    <=> ~ ? [Z] :
+            ( mem(Z,X)
+            & mem(Z,Y) ) ) ).
+
+fof(e_ax,axiom,
+    ! [X] : ~ mem(X,e) ).
+
+fof(s_ax,axiom,
+    ! [X,Y] :
+      ( mem(X,s(Y))
+    <=> X = Y ) ).
+
+fof(u_ax,axiom,
+    ! [X,Y,Z] :
+      ( mem(X,u(Y,Z))
+    <=> ( mem(X,Y)
+        | mem(X,Z) ) ) ).
+
+fof(m_ax,axiom,
+    ! [X,Y,Z] :
+      ( mem(X,m(Y,Z))
+    <=> ( mem(X,Y)
+        & ~ mem(X,Z) ) ) ).
+
+fof(a_def,axiom,
+    ! [X,Y] : a(X,Y) = u(X,s(Y)) ).
+
+fof(n_def,axiom,
+    ! [X] : n(X) = a(X,X) ).
+
+fof(p_ax,axiom,
+    ! [X,Y] :
+      ( mem(X,p(Y))
+    <=> subq(X,Y) ) ).
+
+fof(atleast2p_def,axiom,
+    ! [X] :
+      ( atleast2p(X)
+    <=> ? [Y] :
+          ( mem(Y,X)
+          & ~ subq(X,p(Y)) ) ) ).
+
+fof(atleast3p_def,axiom,
+    ! [X] :
+      ( atleast3p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast2p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast4p_def,axiom,
+    ! [X] :
+      ( atleast4p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast3p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast5p_def,axiom,
+    ! [X] :
+      ( atleast5p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast4p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast6p_def,axiom,
+    ! [X] :
+      ( atleast6p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast5p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast7p_def,axiom,
+    ! [X] :
+      ( atleast7p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast6p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast8p_def,axiom,
+    ! [X] :
+      ( atleast8p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast7p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast9p_def,axiom,
+    ! [X] :
+      ( atleast9p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast8p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast10p_def,axiom,
+    ! [X] :
+      ( atleast10p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast9p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast11p_def,axiom,
+    ! [X] :
+      ( atleast11p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast10p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast12p_def,axiom,
+    ! [X] :
+      ( atleast12p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast11p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast13p_def,axiom,
+    ! [X] :
+      ( atleast13p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast12p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast14p_def,axiom,
+    ! [X] :
+      ( atleast14p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast13p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast15p_def,axiom,
+    ! [X] :
+      ( atleast15p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast14p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+fof(atleast16p_def,axiom,
+    ! [X] :
+      ( atleast16p(X)
+    <=> ? [Y] :
+          ( subq(Y,X)
+          & atleast15p(Y)
+          & ~ subq(X,Y) ) ) ).
+
+%------------------------------------------------------------------------------

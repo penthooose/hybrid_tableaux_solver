@@ -1,0 +1,15 @@
+# Elixir build and dependency directories
+/_build
+/deps
+
+# Mix artifacts
+/*.ez
+
+# Erlang crash dumps
+erl_crash.dump
+
+# Elixir tooling
+/.elixir_ls
+
+# Environment files
+**.env
