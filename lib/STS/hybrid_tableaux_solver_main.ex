@@ -192,6 +192,7 @@ defmodule STS.HybridTableauxSolverMain do
     print_route(result)
     print_metrics(result)
     print_llm_status(result)
+    print_applied_tactics(result)
     print_symbolic_result(result)
     print_trace(result)
     print_timings(result)
@@ -272,6 +273,26 @@ defmodule STS.HybridTableauxSolverMain do
 
   defp print_guidance_highlights(_), do: IO.puts("  guidance highlights: none")
 
+  defp print_applied_tactics(%{applied_tactics: tactics}) when is_map(tactics) do
+    IO.puts("Applied symbolic tactics:")
+
+    if map_size(tactics) == 0 do
+      IO.puts("  none")
+    else
+      Enum.each(tactics, fn {k, v} ->
+        IO.puts("  #{k}: #{inspect(v)}")
+      end)
+    end
+
+    IO.puts("")
+  end
+
+  defp print_applied_tactics(_result) do
+    IO.puts("Applied symbolic tactics:")
+    IO.puts("  none")
+    IO.puts("")
+  end
+
   defp print_symbolic_result(%{symbolic: symbolic}) do
     IO.puts("Symbolic verification result:")
     IO.puts("  " <> String.replace(TableauxSolver.format_result(symbolic), "\n", "\n  "))
@@ -344,7 +365,8 @@ defmodule STS.HybridTableauxSolverMain do
 
   defp print_usage do
     IO.puts("Usage:")
-    IO.puts("  elixir hybrid_tableaux_solver_main.ex \"<FORMULA>\" [options]")
+    IO.puts("  mix sts.solve \"<FORMULA>\" [options]")
+    IO.puts("  mix solve \"<FORMULA>\" [options]")
     IO.puts("")
     IO.puts("Options:")
     IO.puts("  --demo                  Run built-in demo formulas")
@@ -366,10 +388,8 @@ defmodule STS.HybridTableauxSolverMain do
     IO.puts("  --tptp-domain-limit <n> Max constants used for auto-domain (default: 6)")
     IO.puts("")
     IO.puts("Example:")
-    IO.puts("  elixir hybrid_tableaux_solver_main.ex \"forall x in {a,b}: P(x) -> Q(x)\" --llm")
+    IO.puts("  mix solve \"forall x in {a,b}: P(x) -> Q(x)\" --llm")
 
-    IO.puts(
-      "  elixir hybrid_tableaux_solver_main.ex --tptp-file .\\tptp_problems\\AGT001+0.ax --force-llm"
-    )
+    IO.puts("  mix solve --tptp-file .\\tptp_problems\\AGT001+0.ax --force-llm")
   end
 end

@@ -22,8 +22,8 @@ defmodule SimpleTableauxSolver.MixProject do
   defp deps do
     [
       {:req, "~> 0.5"},
-      {:jason, "~> 1.4", optional: true},
-      {:kino, "~> 0.13", optional: true}
+      {:jason, "~> 1.4"},
+      {:kino, "~> 0.13"}
     ]
   end
 

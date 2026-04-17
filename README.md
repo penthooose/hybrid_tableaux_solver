@@ -95,37 +95,37 @@ Optional escript mode:
 
 ### Example A — quick contradiction
 
-`elixir hybrid_tableaux_solver_main.ex "p and not p"`
+`mix solve "p and not p"`
 
 ### Example B — quantified formula
 
-`elixir hybrid_tableaux_solver_main.ex "forall x in {a,b}: P(x) -> Q(x)"`
+`mix solve "forall x in {a,b}: P(x) -> Q(x)"`
 
 ### Example C — force LLM guidance
 
-`elixir hybrid_tableaux_solver_main.ex "(p or q) and (not p or r) and (not q or r)" --force-llm --llm`
+`mix solve "(p or q) and (not p or r) and (not q or r)" --force-llm --llm`
 
 ### Example D — custom model
 
-`elixir hybrid_tableaux_solver_main.ex "exists x in {a,b,c}: P(x) and not Q(x)" --model mistralai/mistral-small-3.1-24b-instruct`
+`mix solve "exists x in {a,b,c}: P(x) and not Q(x)" --model mistralai/mistral-small-3.1-24b-instruct`
 
 ### Example D2 — use `.env` model automatically
 
 If `.env` contains `OPENROUTER_MODEL=anthropic/claude-sonnet-4.6`, then this uses that model automatically:
 
-`elixir hybrid_tableaux_solver_main.ex "p" --force-llm`
+`mix solve "p" --force-llm`
 
 ### Example E — provide default domain
 
-`elixir hybrid_tableaux_solver_main.ex "forall x: P(x) -> Q(x)" --domain a,b,c`
+`mix solve "forall x: P(x) -> Q(x)" --domain a,b,c`
 
 ### Example F — symbolic trace noise on
 
-`elixir hybrid_tableaux_solver_main.ex "(p or q) and not p" --symbolic-debug`
+`mix solve "(p or q) and not p" --symbolic-debug`
 
 ### Example G — demo mode
 
-`elixir hybrid_tableaux_solver_main.ex --demo`
+`mix solve --demo`
 
 ---
 
@@ -262,7 +262,7 @@ For a research/class setup, API-first + optional UI controls is usually the best
 
 In a Livebook code cell:
 
-`Code.require_file("solver_gui.ex", __DIR__)`
+`Mix.install([{:simple_tableaux_solver, github: "penthooose/Simple_hybrid_tableaux_solver"}])`
 
 `STS.SolverGUI.start()`
 
@@ -314,23 +314,23 @@ For complete FOL ATP-level correctness on all TPTP problems, use a dedicated sol
 
 Single file:
 
-`elixir hybrid_tableaux_solver_main.ex --tptp-file .\\tptp_problems\\AGT001+0.ax --no-llm`
+`mix solve --tptp-file .\\tptp_problems\\AGT001+0.ax --no-llm`
 
 Single file with LLM:
 
-`elixir hybrid_tableaux_solver_main.ex --tptp-file .\\tptp_problems\\AGT001+0.ax --llm`
+`mix solve --tptp-file .\\tptp_problems\\AGT001+0.ax --llm`
 
 Folder batch (first 3 files):
 
-`elixir hybrid_tableaux_solver_main.ex --tptp-dir .\\tptp_problems --tptp-limit 3 --no-llm`
+`mix solve --tptp-dir .\\tptp_problems --tptp-limit 3 --no-llm`
 
 Use specific roles:
 
-`elixir hybrid_tableaux_solver_main.ex --tptp-file .\\tptp_problems\\AGT001+0.ax --tptp-roles axiom,conjecture`
+`mix solve --tptp-file .\\tptp_problems\\AGT001+0.ax --tptp-roles axiom,conjecture`
 
 Control finite grounding size:
 
-`elixir hybrid_tableaux_solver_main.ex --tptp-file .\\tptp_problems\\AGT001+0.ax --tptp-domain-limit 8`
+`mix solve --tptp-file .\\tptp_problems\\AGT001+0.ax --tptp-domain-limit 8`
 
 ---
 
@@ -346,3 +346,15 @@ Current rule:
   - node/atom complexity passes moderate thresholds.
 
 This keeps small trivial formulas fast while still using LLM guidance for meaningful reasoning cases.
+
+---
+
+## 13) How LLM guidance is used by solver (machine-applied)
+
+Guidance is not only printed for humans anymore.
+
+- The orchestrator extracts a `solver_tactics` block from LLM JSON (or infers tactics from hints).
+- It maps this to symbolic options (currently branch ordering strategy, e.g. `:close_fast`).
+- The symbolic tableaux engine applies that tactic while exploring disjunction branches.
+
+So LLM guidance now has an executable effect on search behavior while final correctness remains symbolic.

@@ -141,6 +141,7 @@ defmodule STS.SolverGUI do
   defp render_result_markdown(result, formula, solver_opts) do
     symbolic = Map.get(result, :symbolic, %{})
     llm = Map.get(result, :llm, %{})
+    tactics = Map.get(result, :applied_tactics, %{})
     metrics = get_in(result, [:candidate, :metrics]) || %{}
     steps = Map.get(result, :explain_steps, [])
     timings = Map.get(result, :timings_ms, %{})
@@ -177,6 +178,7 @@ defmodule STS.SolverGUI do
     - LLM used: `#{Map.get(llm, :used, false)}`
     - LLM status: `#{Map.get(llm, :status, "-")}`
     - LLM reason: `#{Map.get(llm, :reason, "-")}`
+    - Applied tactics: `#{inspect(tactics)}`
 
     ### Symbolic Verdict
     - Status: `#{Map.get(symbolic, :status, "-")}`
@@ -299,7 +301,8 @@ defmodule STS.SolverGUI do
 
     To use GUI locally on Windows:
     1) Start Livebook locally.
-    2) In a Livebook cell, `Code.require_file("solver_gui.ex", __DIR__)`.
+    2) In a Livebook cell, run:
+       Mix.install([{:simple_tableaux_solver, github: "penthooose/Simple_hybrid_tableaux_solver"}])
     3) Run `STS.SolverGUI.start()`.
 
     API mode remains available via:

@@ -54,10 +54,11 @@ defmodule STS.TableauxSolver do
   def solve(formula_or_input, opts \\ []) do
     debug = Keyword.get(opts, :debug, false)
     default_domain = normalize_default_domain(Keyword.get(opts, :domain, []))
+    branch_priority = Keyword.get(opts, :branch_priority, :default)
 
     with {:ok, original_formula, input} <- normalize_input(formula_or_input),
          normalized <- normalize_formula(original_formula, default_domain),
-         branch_result <- tableaux([normalized], %{}, debug) do
+         branch_result <- tableaux([normalized], %{}, debug, branch_priority) do
       to_result(branch_result, input, original_formula, normalized)
     else
       {:error, reason} ->
@@ -255,49 +256,81 @@ defmodule STS.TableauxSolver do
 
   # ---------- Tableaux engine ----------
 
-  defp tableaux([], assignment, _debug), do: {:sat, assignment}
+  defp tableaux([], assignment, _debug, _branch_priority), do: {:sat, assignment}
 
-  defp tableaux([formula | rest], assignment, debug) do
+  defp tableaux([formula | rest], assignment, debug, branch_priority) do
     if debug, do: IO.puts("expanding: #{Tableaux.to_human(formula)}")
 
     case formula do
       :top ->
-        tableaux(rest, assignment, debug)
+        tableaux(rest, assignment, debug, branch_priority)
 
       :bot ->
         :unsat
 
       {:and, x, y} ->
-        tableaux([x, y | rest], assignment, debug)
+        tableaux([x, y | rest], assignment, debug, branch_priority)
 
       {:or, x, y} ->
-        case tableaux([x | rest], assignment, debug) do
+        {first_branch, second_branch} = order_or_branches(x, y, assignment, branch_priority)
+
+        case tableaux([first_branch | rest], assignment, debug, branch_priority) do
           {:sat, _} = sat -> sat
-          :unsat -> tableaux([y | rest], assignment, debug)
+          :unsat -> tableaux([second_branch | rest], assignment, debug, branch_priority)
         end
 
       _ ->
         case literal_info(formula) do
           {:ok, atom_name, truth_value} ->
-            extend_assignment(atom_name, truth_value, rest, assignment, debug)
+            extend_assignment(atom_name, truth_value, rest, assignment, debug, branch_priority)
 
           :non_literal ->
             # Should be rare after normalization; try to continue conservatively.
-            tableaux(rest, assignment, debug)
+            tableaux(rest, assignment, debug, branch_priority)
         end
     end
   end
 
-  defp extend_assignment(atom_name, truth_value, rest, assignment, _debug) do
+  defp extend_assignment(atom_name, truth_value, rest, assignment, _debug, branch_priority) do
     case Map.get(assignment, atom_name) do
       nil ->
-        tableaux(rest, Map.put(assignment, atom_name, truth_value), false)
+        tableaux(rest, Map.put(assignment, atom_name, truth_value), false, branch_priority)
 
       ^truth_value ->
-        tableaux(rest, assignment, false)
+        tableaux(rest, assignment, false, branch_priority)
 
       _opposite ->
         :unsat
+    end
+  end
+
+  defp order_or_branches(x, y, _assignment, :default), do: {x, y}
+  defp order_or_branches(x, y, _assignment, :reverse), do: {y, x}
+
+  defp order_or_branches(x, y, assignment, :close_fast) do
+    sx = closure_potential(x, assignment)
+    sy = closure_potential(y, assignment)
+
+    if sy > sx, do: {y, x}, else: {x, y}
+  end
+
+  defp order_or_branches(x, y, _assignment, _other), do: {x, y}
+
+  defp closure_potential(formula, assignment) do
+    case literal_info(formula) do
+      {:ok, atom_name, truth_value} ->
+        case Map.get(assignment, atom_name) do
+          nil -> 0
+          ^truth_value -> 1
+          _ -> 3
+        end
+
+      :non_literal ->
+        case formula do
+          {:and, a, b} -> closure_potential(a, assignment) + closure_potential(b, assignment)
+          {:or, a, b} -> max(closure_potential(a, assignment), closure_potential(b, assignment))
+          _ -> 0
+        end
     end
   end
 

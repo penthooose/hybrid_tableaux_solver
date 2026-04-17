@@ -23,6 +23,7 @@ defmodule STS.HybridOrchestrator do
           input: String.t(),
           route: :symbolic_only | :hybrid_llm_guided | :hybrid_fallback,
           candidate: %{candidate?: boolean(), metrics: map()} | nil,
+          applied_tactics: map(),
           llm: %{
             attempted: boolean(),
             used: boolean(),
@@ -66,10 +67,25 @@ defmodule STS.HybridOrchestrator do
     {llm_block, trace, llm_time} =
       maybe_get_guidance(llm_attempt?, formula_text, candidate_info, opts, trace)
 
+    tactics = derive_symbolic_tactics(llm_block)
+
+    trace =
+      if map_size(tactics) > 0 do
+        add_step(
+          trace,
+          :info,
+          "LLM tactics applied",
+          "Applied machine-usable tactics: #{inspect(tactics)}"
+        )
+      else
+        trace
+      end
+
     symbolic_opts =
       opts
-      |> Keyword.take([:domain, :debug])
+      |> Keyword.take([:domain, :debug, :branch_priority])
       |> Keyword.put(:debug, Keyword.get(opts, :symbolic_debug, false))
+      |> maybe_put_tactic_opts(tactics)
 
     {symbolic_result, symbolic_time} =
       time_it(fn -> TableauxSolver.solve(formula_or_input, symbolic_opts) end)
@@ -89,6 +105,7 @@ defmodule STS.HybridOrchestrator do
       input: formula_text,
       route: route,
       candidate: candidate_info,
+      applied_tactics: tactics,
       llm: llm_block,
       symbolic: symbolic_result,
       explain_steps: finalize_steps(trace),
@@ -329,6 +346,7 @@ defmodule STS.HybridOrchestrator do
     - quantifier_hints: [string]
     - external_oracle_hints: [string]
     - confidence: number between 0 and 1
+    - solver_tactics: {"branch_priority": "default|close_fast|reverse", "reason": string}
 
     Constraints:
     - Output a RAW JSON object only (no markdown, no code fences).
@@ -449,6 +467,53 @@ defmodule STS.HybridOrchestrator do
   defp choose_route(%{attempted: false}), do: :symbolic_only
   defp choose_route(%{status: :ok}), do: :hybrid_llm_guided
   defp choose_route(_), do: :hybrid_fallback
+
+  defp derive_symbolic_tactics(%{guidance: %{parsed: parsed}}) when is_map(parsed) do
+    structured =
+      parsed
+      |> Map.get("solver_tactics", %{})
+      |> parse_structured_tactics()
+
+    inferred = infer_tactics_from_hints(parsed)
+
+    Map.merge(inferred, structured)
+  end
+
+  defp derive_symbolic_tactics(_), do: %{}
+
+  defp parse_structured_tactics(%{"branch_priority" => value}) when is_binary(value) do
+    case String.downcase(String.trim(value)) do
+      "close_fast" -> %{branch_priority: :close_fast}
+      "reverse" -> %{branch_priority: :reverse}
+      "default" -> %{branch_priority: :default}
+      _ -> %{}
+    end
+  end
+
+  defp parse_structured_tactics(_), do: %{}
+
+  defp infer_tactics_from_hints(parsed) do
+    text_blob =
+      parsed
+      |> Map.get("branching_hints", [])
+      |> List.wrap()
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    cond do
+      String.contains?(text_blob, "close quickly") -> %{branch_priority: :close_fast}
+      String.contains?(text_blob, "branch explosion") -> %{branch_priority: :close_fast}
+      true -> %{}
+    end
+  end
+
+  defp maybe_put_tactic_opts(opts, tactics) do
+    case {Keyword.has_key?(opts, :branch_priority), Map.get(tactics, :branch_priority)} do
+      {true, _} -> opts
+      {false, nil} -> opts
+      {false, branch_priority} -> Keyword.put(opts, :branch_priority, branch_priority)
+    end
+  end
 
   defp time_it(fun) when is_function(fun, 0) do
     start = System.monotonic_time(:millisecond)
