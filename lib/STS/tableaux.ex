@@ -130,6 +130,9 @@ defmodule STS.Tableaux do
 
   defp to_human({:pred, name, []}, _prec), do: name
 
+  defp to_human({:pred, "=", [l, r]}, _prec), do: "#{term_to_human(l)} = #{term_to_human(r)}"
+  defp to_human({:pred, "!=", [l, r]}, _prec), do: "#{term_to_human(l)} ≠ #{term_to_human(r)}"
+
   defp to_human({:pred, name, args}, _prec) do
     args_str = Enum.map_join(args, ", ", &term_to_human/1)
     "#{name}(#{args_str})"
@@ -242,12 +245,6 @@ defmodule STS.Tableaux do
   defp to_name(name), do: to_string(name)
 
   # ----- Macros for convenience -----
-
-  defmacro ~~~x do
-    quote do
-      neg(unquote(x))
-    end
-  end
 
   defmacro left &&& right do
     quote do

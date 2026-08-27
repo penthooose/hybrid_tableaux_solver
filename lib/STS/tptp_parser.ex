@@ -17,6 +17,9 @@ defmodule STS.TPTPParser do
 
   @known_roles ~w(axiom hypothesis assumption definition lemma conjecture negated_conjecture type plain)a
 
+  # Standard non-conjecture roles that form the premises of a theorem.
+  @premise_roles ~w(axiom hypothesis assumption definition lemma)a
+
   @type role :: atom()
   @type entry :: %{
           name: String.t(),
@@ -38,7 +41,7 @@ defmodule STS.TPTPParser do
 
   @spec to_conjunction([entry()], keyword()) :: Tableaux.formula()
   def to_conjunction(entries, opts \\ []) when is_list(entries) do
-    roles = Keyword.get(opts, :roles, [:axiom])
+    roles = Keyword.get(opts, :roles, @premise_roles)
 
     formulas =
       entries
@@ -51,6 +54,28 @@ defmodule STS.TPTPParser do
 
       [head | tail] ->
         Enum.reduce(tail, head, fn f, acc -> Tableaux.conj(acc, f) end)
+    end
+  end
+
+  @doc """
+  Conjoins the (negated) conjecture onto a premise formula for theorem proving.
+
+  `formula` is the premise conjunction (see `to_conjunction/2`); a `conjecture`
+  entry is negated (classical refutation) and conjoined, while an already-
+  `negated_conjecture` entry is conjoined as-is. Returns `formula` unchanged
+  when the problem has no conjecture.
+  """
+  @spec add_conjecture(Tableaux.formula(), [entry()]) :: Tableaux.formula()
+  def add_conjecture(formula, entries) when is_list(entries) do
+    case Enum.find(entries, &(&1.role in [:conjecture, :negated_conjecture])) do
+      nil ->
+        formula
+
+      %{role: :conjecture, formula: conjecture} ->
+        Tableaux.conj(formula, Tableaux.neg(conjecture))
+
+      %{role: :negated_conjecture, formula: conjecture} ->
+        Tableaux.conj(formula, conjecture)
     end
   end
 
@@ -101,13 +126,24 @@ defmodule STS.TPTPParser do
   # ----------------
 
   defp parse_blocks(blocks) do
-    results = Enum.map(blocks, &parse_fof_block/1)
+    results = Enum.map(blocks, &parse_block/1)
 
     case Enum.find(results, &match?({:error, _}, &1)) do
-      nil -> {:ok, Enum.map(results, fn {:ok, e} -> e end)}
+      nil -> {:ok, Enum.flat_map(results, fn {:ok, e} -> e end)}
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp parse_block({block, kind}) do
+    case parse_block_of_kind(block, kind) do
+      :skip -> {:ok, []}
+      {:ok, entry} -> {:ok, [entry]}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Supported TPTP block kinds (formula roles).
+  @block_kinds ~w(fof cnf tff thf)a
 
   defp extract_fof_blocks(content) when is_binary(content) do
     cleaned = strip_comments(content)
@@ -115,15 +151,15 @@ defmodule STS.TPTPParser do
   end
 
   defp do_extract_blocks(text, pos, acc) do
-    case next_fof_start(text, pos) do
+    case next_block_start(text, pos) do
       :nomatch ->
         {:ok, Enum.reverse(acc)}
 
-      {:ok, start} ->
-        case find_fof_end(text, start + 4, 1) do
+      {:ok, start, kind} ->
+        case find_block_end(text, start + byte_size(Atom.to_string(kind)) + 1, 1) do
           {:ok, stop} ->
             block = binary_part(text, start, stop - start + 1)
-            do_extract_blocks(text, stop + 1, [block | acc])
+            do_extract_blocks(text, stop + 1, [{block, kind} | acc])
 
           {:error, reason} ->
             {:error, reason}
@@ -131,7 +167,9 @@ defmodule STS.TPTPParser do
     end
   end
 
-  defp next_fof_start(text, pos) do
+  # Finds the next `fof(`/`cnf(`/`tff(`/`thf(` block start, returning
+  # `{:ok, index, kind}` or `:nomatch`.
+  defp next_block_start(text, pos) do
     size = byte_size(text)
 
     if pos >= size do
@@ -139,26 +177,36 @@ defmodule STS.TPTPParser do
     else
       slice = binary_part(text, pos, size - pos)
 
-      case :binary.match(slice, "fof(") do
-        {idx, _len} -> {:ok, pos + idx}
-        :nomatch -> :nomatch
+      candidates =
+        Enum.flat_map(@block_kinds, fn kind ->
+          prefix = Atom.to_string(kind) <> "("
+
+          case :binary.match(slice, prefix) do
+            {idx, _len} -> [{idx, kind}]
+            :nomatch -> []
+          end
+        end)
+
+      case Enum.sort_by(candidates, &elem(&1, 0)) do
+        [{idx, kind} | _] -> {:ok, pos + idx, kind}
+        [] -> :nomatch
       end
     end
   end
 
-  defp find_fof_end(text, pos, depth) when depth >= 0 do
+  defp find_block_end(text, pos, depth) when depth >= 0 do
     size = byte_size(text)
 
     cond do
       pos >= size ->
-        {:error, "Unterminated fof(...) block"}
+        {:error, "Unterminated TPTP block"}
 
       true ->
         ch = :binary.at(text, pos)
 
         cond do
           ch == ?( ->
-            find_fof_end(text, pos + 1, depth + 1)
+            find_block_end(text, pos + 1, depth + 1)
 
           ch == ?) and depth - 1 == 0 ->
             dot_pos = skip_ws(text, pos + 1)
@@ -166,14 +214,14 @@ defmodule STS.TPTPParser do
             if dot_pos < size and :binary.at(text, dot_pos) == ?. do
               {:ok, dot_pos}
             else
-              find_fof_end(text, pos + 1, depth - 1)
+              find_block_end(text, pos + 1, depth - 1)
             end
 
           ch == ?) ->
-            find_fof_end(text, pos + 1, depth - 1)
+            find_block_end(text, pos + 1, depth - 1)
 
           true ->
-            find_fof_end(text, pos + 1, depth)
+            find_block_end(text, pos + 1, depth)
         end
     end
   end
@@ -209,11 +257,11 @@ defmodule STS.TPTPParser do
   # Block parsing
   # ----------------
 
-  defp parse_fof_block(block) do
+  defp parse_block_of_kind(block, kind) do
     inner =
       block
       |> String.trim()
-      |> String.trim_leading("fof(")
+      |> String.trim_leading(Atom.to_string(kind) <> "(")
       |> String.trim_trailing(".")
 
     inner =
@@ -227,18 +275,26 @@ defmodule STS.TPTPParser do
 
     case parts do
       [name, role, formula_str] ->
-        with {:ok, formula} <- parse_formula_string(formula_str) do
-          {:ok,
-           %{
-             name: String.trim(name),
-             role: parse_role(role),
-             formula: formula,
-             raw_formula: String.trim(formula_str)
-           }}
+        role_atom = parse_role(role)
+
+        if role_atom == :type do
+          # thf(...) type declarations carry no formula to prove — skip them.
+          :skip
+        else
+          with {:ok, formula} <- parse_formula_string(formula_str) do
+            {:ok,
+             %{
+               name: String.trim(name),
+               role: role_atom,
+               formula: formula,
+               raw_formula: String.trim(formula_str)
+             }}
+          end
         end
 
       _ ->
-        {:error, "Malformed fof block: #{String.slice(String.trim(block), 0, 120)}..."}
+        {:error,
+         "Malformed #{Atom.to_string(kind)} block: #{String.slice(String.trim(block), 0, 120)}..."}
     end
   end
 
@@ -342,6 +398,12 @@ defmodule STS.TPTPParser do
 
       String.starts_with?(text, "=") ->
         do_tokenize(String.slice(text, 1..-1//1), [:eq | acc])
+
+      String.starts_with?(text, "@") ->
+        do_tokenize(String.slice(text, 1..-1//1), [:at | acc])
+
+      String.starts_with?(text, ">") ->
+        do_tokenize(String.slice(text, 1..-1//1), [:gt | acc])
 
       String.starts_with?(text, "(") ->
         do_tokenize(String.slice(text, 1..-1//1), [:lparen | acc])
@@ -497,21 +559,59 @@ defmodule STS.TPTPParser do
   defp parse_var_list([{:ident, name}, :comma | rest], acc),
     do: parse_var_list(rest, [name | acc])
 
+  # Typed THF variable list entry: `[X: $i, ...]` — skip the type annotation.
+  defp parse_var_list([{:ident, name}, :colon | rest], acc) do
+    with {:ok, rest2} <- skip_type(rest, 0) do
+      case rest2 do
+        [:comma | rest3] -> parse_var_list(rest3, [name | acc])
+        [:rbrack | _] = r -> {:ok, Enum.reverse([name | acc]), r}
+        _ -> {:error, "Invalid quantifier variable list"}
+      end
+    end
+  end
+
   defp parse_var_list([{:ident, name} | rest], acc), do: {:ok, Enum.reverse([name | acc]), rest}
   defp parse_var_list(_tokens, _acc), do: {:error, "Invalid quantifier variable list"}
+
+  # Consume a THF type annotation (e.g. `$i`, `$o`, `$tType`, `$i > $i`) up to
+  # the next top-level comma or closing bracket.
+  defp skip_type([:comma | _] = rest, 0), do: {:ok, rest}
+  defp skip_type([:rbrack | _] = rest, 0), do: {:ok, rest}
+  defp skip_type([:lparen | rest], depth), do: skip_type(rest, depth + 1)
+  defp skip_type([:rparen | rest], depth) when depth > 0, do: skip_type(rest, depth - 1)
+  defp skip_type([_ | rest], depth), do: skip_type(rest, depth)
+  defp skip_type([], _depth), do: {:error, "Unterminated type annotation"}
 
   defp parse_atom_formula([{:ident, "$true"} | rest]), do: {:ok, :top, rest}
   defp parse_atom_formula([{:ident, "$false"} | rest]), do: {:ok, :bot, rest}
 
-  defp parse_atom_formula([{:ident, name}, :lparen | rest]) do
-    with {:ok, args, rest2} <- parse_term_list(rest, []),
-         {:ok, rest3} <- expect(rest2, :rparen) do
-      {:ok, Tableaux.pred(name, Enum.map(args, &term_to_logic/1)), rest3}
+  # Predicate / equality atom. `t1 = t2` is represented as an opaque predicate
+  # atom `{:pred, "=", [t1, t2]}`; `t1 != t2` as `{:pred, "!=", [t1, t2]}`.
+  defp parse_atom_formula(tokens) do
+    with {:ok, term, rest} <- parse_term(tokens) do
+      case rest do
+        [:eq | rest2] ->
+          with {:ok, right, rest3} <- parse_term(rest2) do
+            {:ok, {:pred, "=", [term, right]}, rest3}
+          end
+
+        [:neq | rest2] ->
+          with {:ok, right, rest3} <- parse_term(rest2) do
+            {:ok, {:pred, "!=", [term, right]}, rest3}
+          end
+
+        _ ->
+          with {:ok, pred} <- pred_from_term(term) do
+            {:ok, pred, rest}
+          end
+      end
     end
   end
 
-  defp parse_atom_formula([{:ident, name} | rest]), do: {:ok, Tableaux.prop(name), rest}
-  defp parse_atom_formula(_), do: {:error, "Expected atom/predicate"}
+  defp pred_from_term({:fun, name, args}), do: {:ok, {:pred, name, args}}
+  defp pred_from_term({:const, name}), do: {:ok, {:pred, name, []}}
+  defp pred_from_term({:var, name}), do: {:ok, {:pred, name, []}}
+  defp pred_from_term(_), do: {:error, "Expected atom/predicate"}
 
   defp parse_term_list([:rparen | _] = rest, acc), do: {:ok, Enum.reverse(acc), rest}
 
@@ -525,26 +625,51 @@ defmodule STS.TPTPParser do
     end
   end
 
-  defp parse_term([{:ident, name}, :lparen | rest]) do
+  defp parse_term(tokens), do: parse_term_app(parse_base_term(tokens))
+
+  defp parse_base_term([{:ident, name}, :lparen | rest]) do
     with {:ok, args, rest2} <- parse_term_list(rest, []),
          {:ok, rest3} <- expect(rest2, :rparen) do
       {:ok, {:fun, name, args}, rest3}
     end
   end
 
-  defp parse_term([{:ident, name} | rest]) do
+  defp parse_base_term([{:ident, name} | rest]) do
     if variable_name?(name), do: {:ok, {:var, name}, rest}, else: {:ok, {:const, name}, rest}
   end
 
-  defp parse_term(_), do: {:error, "Expected term"}
+  defp parse_base_term([:lparen | rest]) do
+    with {:ok, t, rest2} <- parse_term(rest),
+         {:ok, rest3} <- expect(rest2, :rparen) do
+      {:ok, t, rest3}
+    end
+  end
+
+  defp parse_base_term(_), do: {:error, "Expected term"}
+
+  # THF application chain: `f @ a @ b` becomes `{:fun, f, [a, b]}`.
+  defp parse_term_app({:error, reason}), do: {:error, reason}
+
+  defp parse_term_app({:ok, term, rest}) do
+    case rest do
+      [:at | rest2] ->
+        with {:ok, arg, rest3} <- parse_term(rest2) do
+          parse_term_app({:ok, apply_term(term, arg), rest3})
+        end
+
+      _ ->
+        {:ok, term, rest}
+    end
+  end
+
+  defp apply_term({:const, name}, arg), do: {:fun, name, [arg]}
+  defp apply_term({:var, name}, arg), do: {:fun, name, [arg]}
+  defp apply_term({:fun, name, args}, arg), do: {:fun, name, args ++ [arg]}
+  defp apply_term(other, arg), do: {:fun, "app", [other, arg]}
 
   defp variable_name?(name) do
     String.match?(name, ~r/^[A-Z]/)
   end
-
-  defp term_to_logic({:var, name}), do: Tableaux.var(name)
-  defp term_to_logic({:const, name}), do: Tableaux.const(name)
-  defp term_to_logic({:fun, name, args}), do: {:fun, name, Enum.map(args, &term_to_logic/1)}
 
   defp expect([token | rest], token), do: {:ok, rest}
   defp expect(_tokens, token), do: {:error, "Expected token #{inspect(token)}"}

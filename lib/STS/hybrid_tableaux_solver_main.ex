@@ -81,7 +81,18 @@ defmodule STS.HybridTableauxSolverMain do
     case TPTPParser.parse_file(path) do
       {:ok, entries} ->
         roles = parse_tptp_roles(Keyword.get(opts, :tptp_roles))
-        formula = TPTPParser.to_conjunction(entries, roles: roles)
+
+        formula =
+          if :conjecture in roles or :negated_conjecture in roles do
+            # Explicit role set already contains the conjecture — keep it as-is.
+            TPTPParser.to_conjunction(entries, roles: roles)
+          else
+            # Default: prove the conjecture by negating it (refutation).
+            TPTPParser.add_conjecture(
+              TPTPParser.to_conjunction(entries, roles: roles),
+              entries
+            )
+          end
 
         constants = TPTPParser.collect_constants(entries)
         tptp_domain_limit = Keyword.get(opts, :tptp_domain_limit, 6)
@@ -117,11 +128,42 @@ defmodule STS.HybridTableauxSolverMain do
         end
 
         IO.puts("")
-        run(formula, solver_opts)
+        result = run(formula, solver_opts)
+
+        final_status = get_in(result, [:symbolic_execution, :final_status])
+
+        has_conjecture =
+          Enum.any?(entries, &(&1.role in [:conjecture, :negated_conjecture]))
+
+        print_szs_status(final_status, has_conjecture)
 
       {:error, reason} ->
         IO.puts("Failed to parse TPTP file #{path}: #{reason}")
     end
+  end
+
+  # Emit a machine-readable SZS status line (the benchmark runner parses this):
+  #   unsat on a (negated) conjecture -> Unsatisfiable (theorem proven)
+  #   sat on a conjecture problem     -> GaveUp (could not refute — incomplete)
+  #   sat on plain satisfiability     -> Satisfiable
+  defp print_szs_status(final_status, has_conjecture) do
+    status =
+      cond do
+        final_status == :unsat ->
+          "Unsatisfiable"
+
+        final_status == :sat and has_conjecture ->
+          "GaveUp"
+
+        final_status == :sat ->
+          "Satisfiable"
+
+        true ->
+          "GaveUp"
+      end
+
+    IO.puts("")
+    IO.puts("% SZS status #{status}")
   end
 
   defp run_tptp_dir(dir, opts) do
@@ -146,7 +188,9 @@ defmodule STS.HybridTableauxSolverMain do
     end
   end
 
-  defp parse_tptp_roles(nil), do: [:axiom]
+  # Default premise roles (everything except the conjecture, which is handled
+  # separately via refutation when no explicit role set is given).
+  defp parse_tptp_roles(nil), do: [:axiom, :hypothesis, :assumption, :definition, :lemma]
 
   defp parse_tptp_roles(raw) when is_binary(raw) do
     raw
