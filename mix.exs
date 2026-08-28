@@ -23,7 +23,7 @@ defmodule SimpleTableauxSolver.MixProject do
     [
       {:req, "~> 0.5"},
       {:jason, "~> 1.4"},
-      {:kino, "~> 0.13"}
+      {:kino, "~> 0.19"}
     ]
   end
 
